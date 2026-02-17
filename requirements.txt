@@ -1,0 +1,10 @@
+SpeechRecognition
+pyttsx3
+requests
+pyaudio
+sounddevice
+pyautogui
+pycaw
+comtypes
+wikipedia
+deep-translator

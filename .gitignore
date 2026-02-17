@@ -1,0 +1,10 @@
+__pycache__/
+*.py[cod]
+*$py.class
+.venv/
+.env
+.DS_Store
+*.log
+data/memory.json
+data/test_memory.json
+data/test_executor_memory.json

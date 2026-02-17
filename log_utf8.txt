@@ -1,0 +1,6 @@
+Initializing COM...
+Device: AudioDevice: Speakers (Realtek(R) Audio)
+Type: <class 'pycaw.utils.AudioDevice'>
+Attributes:
+LOWERCASE activate failed: 'AudioDevice' object has no attribute 'activate'
+UPPERCASE Activate failed: 'AudioDevice' object has no attribute 'Activate'
