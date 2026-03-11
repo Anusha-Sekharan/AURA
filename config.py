@@ -2,7 +2,7 @@ import os
 
 # Ollama Configuration
 OLLAMA_BASE_URL = "http://localhost:11434/api/generate"
-OLLAMA_MODEL = "qwen2.5:3b"  # User specified model
+OLLAMA_MODEL = "llama3.1:8b"  # User specified model
 
 # Email Configuration
 EMAIL_SENDER = "anushasekharan@gmail.com"
