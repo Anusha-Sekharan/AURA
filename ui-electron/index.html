@@ -1,0 +1,45 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <meta charset="UTF-8">
+    <title>Aura</title>
+    <!-- Content Security Policy to allow inline styles/scripts for local Electron use -->
+    <meta http-equiv="Content-Security-Policy" content="script-src 'self' 'unsafe-inline';">
+    <link rel="stylesheet" href="style.css">
+</head>
+<body>
+
+    <!-- Small Widget View -->
+    <div id="widget-container">
+        <!-- Pitch Black Core -->
+        <div class="hologram-core"></div>
+        
+        <!-- 3D Orbits -->
+        <div class="orbit-container">
+            <div class="orbit orbit-1"><div class="particle"></div></div>
+            <div class="orbit orbit-2"><div class="particle"></div></div>
+            <div class="orbit orbit-3"><div class="particle"></div></div>
+        </div>
+    </div>
+
+    <!-- Expanded Chat View -->
+    <div id="chat-container">
+        <div class="chat-header">
+            <h2>AURA ASSISTANT</h2>
+            <button id="minimize-btn" class="minimize-btn">ー</button>
+        </div>
+        
+        <div class="chat-history" id="chat-history">
+            <!-- Messages added dynamically -->
+        </div>
+        
+        <div class="chat-input-area">
+            <input type="text" id="chat-input" class="chat-input" placeholder="Ask Aura to do something..." autofocus>
+            <button id="send-btn" class="send-btn">Send</button>
+        </div>
+    </div>
+
+    <!-- Logic that talks between UI, Electron main process, and Python backend -->
+    <script src="renderer.js"></script>
+</body>
+</html>
