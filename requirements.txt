@@ -8,3 +8,7 @@ pycaw
 comtypes
 wikipedia
 deep-translator
+customtkinter
+
+pillow
+
