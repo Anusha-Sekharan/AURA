@@ -53,9 +53,11 @@ function createWindow() {
             const targetX = lastWidgetPosition?.x ?? initialX;
             const targetY = lastWidgetPosition?.y ?? initialY;
             mainWindow.setPosition(targetX, targetY);
-            // Do NOT call setIgnoreMouseEvents here — renderer manages it
-            // via mouseenter/mouseleave so the widget stays immediately clickable
+
+            // Critical for transparency and interactivity
             mainWindow.setAlwaysOnTop(true);
+            // Inform renderer to start tracking mouse again for ignore toggle
+            event.sender.send('mode-toggled', 'widget');
         }
     });
 
@@ -77,9 +79,20 @@ function createWindow() {
         lastWidgetPosition = { x: nextX, y: nextY };
     });
 
+    let isQuitting = false;
+
     // Handle app quitting from renderer
     ipcMain.on('quit-app', () => {
+        isQuitting = true;
         app.quit();
+    });
+
+    // Intercept window close (e.g. from taskbar or Alt+F4)
+    mainWindow.on('close', (event) => {
+        if (!isQuitting) {
+            event.preventDefault();
+            mainWindow.webContents.send('force-collapse');
+        }
     });
 }
 

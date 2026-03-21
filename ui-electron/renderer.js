@@ -4,6 +4,7 @@ const widgetContainer = document.getElementById('widget-container');
 const sphereCanvas = document.getElementById('sphere-canvas');
 const chatContainer = document.getElementById('chat-container');
 const minimizeBtn = document.getElementById('minimize-btn');
+const closeBtn = document.getElementById('close-btn');
 const sendBtn = document.getElementById('send-btn');
 const chatInput = document.getElementById('chat-input');
 const chatHistory = document.getElementById('chat-history');
@@ -201,6 +202,10 @@ function collapseToWidget() {
     isExpanded = false;
     chatContainer.style.display = 'none';
     widgetContainer.style.display = 'flex';
+
+    // Resume particle sphere rendering by ensuring it knows it's visible
+    // (Render frame is already looping, but visibility might have been an issue)
+
     // Re-enable mouse events immediately so the widget is clickable right away
     ipcRenderer.send('set-ignore-mouse-events', false);
     ipcRenderer.send('toggle-mode', false);
@@ -287,6 +292,15 @@ minimizeBtn.addEventListener('click', (e) => {
     e.stopPropagation();
     collapseToWidget();
 });
+if (closeBtn) {
+    closeBtn.addEventListener('click', (e) => {
+        e.stopPropagation();
+        collapseToWidget();
+    });
+}
+ipcRenderer.on('force-collapse', () => {
+    collapseToWidget();
+});
 
 // Submit chat handlers
 async function sendMessage() {
@@ -299,6 +313,11 @@ async function sendMessage() {
     if (text.toLowerCase() === 'exit' || text.toLowerCase() === 'quit') {
         appendMessage('Aura', 'Shutting down UI...', 'aura');
         setTimeout(() => ipcRenderer.send('quit-app'), 1500);
+        return;
+    }
+
+    if (text.toLowerCase() === 'close' || text.toLowerCase() === 'minimize' || text.toLowerCase() === 'hide') {
+        collapseToWidget();
         return;
     }
 

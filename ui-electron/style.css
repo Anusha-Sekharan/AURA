@@ -99,7 +99,13 @@ body {
   -webkit-app-region: drag;
 }
 
-.minimize-btn {
+.window-controls {
+  display: flex;
+  gap: 4px;
+  -webkit-app-region: no-drag;
+}
+
+.minimize-btn, .close-btn {
   background: transparent;
   border: none;
   color: rgba(255,255,255,0.55);
@@ -116,6 +122,11 @@ body {
 
 .minimize-btn:hover {
   background: rgba(255,255,255,0.1);
+}
+
+.close-btn:hover {
+  background: #ff4444;
+  color: white;
 }
 
 .chat-history {

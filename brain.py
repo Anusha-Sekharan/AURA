@@ -48,6 +48,9 @@ class Brain:
         - translate: Translate text (parameter: {{"text": "text to translate", "target": "language (e.g. spanish, french)"}})
         - system_info: Get system status (parameter: null)
         - remember: Save a detail about the user (parameter: {{"key": "what it is (e.g. name, birthday)", "value": "the detail"}})
+        - clipboard: Get recent clipboard history (parameter: null)
+        - timer: Set a timer or alarm (parameter: {{"duration_minutes": 10, "message": "reminder text"}})
+        - calendar: Read or create calendar events (parameter: {{"action": "read" or "create", "time": "e.g., tomorrow 3 PM (for create)", "summary": "event description (for create)"}})
         - chat: General conversation (parameter: null)
         
         JSON Format:

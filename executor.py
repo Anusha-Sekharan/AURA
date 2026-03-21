@@ -6,7 +6,9 @@ class Executor:
     def __init__(self, speaker=None):
         self.speaker = speaker
         from memory_handler import MemoryHandler
+        from clipboard_manager import ClipboardManager
         self.memory = MemoryHandler()
+        self.clipboard = ClipboardManager()
 
     def execute(self, action, parameter=None):
         """
@@ -50,10 +52,179 @@ class Executor:
             return self.get_system_info()
         elif action == "remember":
             return self.remember(parameter)
+        elif action == "clipboard":
+            return self.get_clipboard_history()
+        elif action == "timer":
+            return self.set_timer(parameter)
+        elif action == "calendar":
+            return self.manage_calendar(parameter)
         else:
             return f"Unknown action: {action}"
 
     # ... (open_application and close_application methods) ...
+
+    def get_clipboard_history(self):
+        history = self.clipboard.get_history()
+        if not history:
+            return "Your clipboard history is empty."
+            
+        res = "Recent Clipboard History:\n"
+        for i, item in enumerate(history, 1):
+            # Truncate very long items
+            display_item = item if len(item) < 100 else item[:97] + "..."
+            res += f"{i}. {display_item}\n"
+        return res
+
+    def set_timer(self, details):
+        import threading
+        import time
+        from plyer import notification
+        
+        if not details or not isinstance(details, dict):
+            return "Invalid timer parameters."
+            
+        duration = details.get("duration_minutes", 0)
+        message = details.get("message", "Timer is up!")
+        
+        try:
+            duration = float(duration)
+        except Exception:
+            return "Invalid duration for timer."
+            
+        if duration <= 0:
+            return "Duration must be positive."
+            
+        def alarm_thread(mins, msg):
+            time.sleep(mins * 60)
+            try:
+                notification.notify(
+                    title="Aura Alarm",
+                    message=msg,
+                    app_name="Aura Assistant",
+                    timeout=10
+                )
+            except Exception:
+                pass # plyer might fail on some windows configurations without correct libraries
+                
+            if self.speaker:
+                self.speaker.speak(f"Alarm! {msg}")
+
+        threading.Thread(target=alarm_thread, args=(duration, message), daemon=True).start()
+        msg_str = f"Timer set for {duration} minute(s): {message}"
+        print(msg_str)
+        return msg_str
+
+    def manage_calendar(self, details):
+        import os.path
+        import datetime
+        from google.auth.transport.requests import Request
+        from google.oauth2.credentials import Credentials
+        from google_auth_oauthlib.flow import InstalledAppFlow
+        from googleapiclient.discovery import build
+        from googleapiclient.errors import HttpError
+        import dateparser
+        import tzlocal
+        
+        if not details or not isinstance(details, dict):
+            return "Invalid calendar parameters."
+            
+        # If modifying these scopes, delete the file token.json.
+        SCOPES = ['https://www.googleapis.com/auth/calendar']
+
+        creds = None
+        # The file token.json stores the user's access and refresh tokens
+        if os.path.exists('token.json'):
+            creds = Credentials.from_authorized_user_file('token.json', SCOPES)
+            
+        # If there are no (valid) credentials available, let the user log in.
+        if not creds or not creds.valid:
+            if creds and creds.expired and creds.refresh_token:
+                try:
+                    creds.refresh(Request())
+                except Exception as e:
+                    return f"Failed to refresh calendar credentials: {e}"
+            else:
+                if not os.path.exists('credentials.json'):
+                    return ("Google Calendar 'credentials.json' is missing. "
+                            "Please download it from Google Cloud Console and place it in the project directory.")
+                try:
+                    flow = InstalledAppFlow.from_client_secrets_file(
+                        'credentials.json', SCOPES)
+                    # Increased wait time so user has enough time to click through accounts
+                    creds = flow.run_local_server(port=0, timeout_seconds=300, success_message="Authentication successful! Please close this browser window and return to Aura.")
+                except Exception as e:
+                    return f"Authentication flow failed: {e}"
+            # Save the credentials for the next run
+            try:
+                with open('token.json', 'w') as token:
+                    token.write(creds.to_json())
+            except:
+                pass
+
+        try:
+            service = build('calendar', 'v3', credentials=creds)
+            action = details.get("action", "read")
+            
+            if action == "read":
+                # Call the Calendar API
+                now = datetime.datetime.utcnow().isoformat() + 'Z'  # 'Z' indicates UTC time
+                events_result = service.events().list(calendarId='primary', timeMin=now,
+                                                      maxResults=3, singleEvents=True,
+                                                      orderBy='startTime').execute()
+                events = events_result.get('items', [])
+
+                if not events:
+                    return "You have no upcoming meetings or events."
+                
+                result_str = "Upcoming Events:\n"
+                for event in events:
+                    start = event['start'].get('dateTime', event['start'].get('date'))
+                    # clean up the ISO format string for simple reading
+                    if 'T' in start:
+                        dt = dateparser.parse(start)
+                        readable_time = dt.strftime("%B %d at %I:%M %p") if dt else start
+                    else:
+                        readable_time = start
+                    result_str += f"- {readable_time}: {event.get('summary', 'Busy')}\n"
+                return result_str.strip()
+                
+            elif action == "create":
+                time_str = details.get("time")
+                summary = details.get("summary", "Aura Reminder")
+                
+                if not time_str:
+                    return "I need a time to schedule the meeting/reminder."
+                    
+                parsed_date = dateparser.parse(time_str)
+                if not parsed_date:
+                    return f"Could not understand the time format: {time_str}"
+                    
+                sys_tz = tzlocal.get_localzone()
+                if parsed_date.tzinfo is None:
+                    parsed_date = parsed_date.replace(tzinfo=sys_tz)
+                    
+                end_date = parsed_date + datetime.timedelta(minutes=30)
+                
+                event_body = {
+                  'summary': summary,
+                  'start': {
+                    'dateTime': parsed_date.isoformat(),
+                    'timeZone': str(sys_tz),
+                  },
+                  'end': {
+                    'dateTime': end_date.isoformat(),
+                    'timeZone': str(sys_tz),
+                  },
+                }
+
+                event = service.events().insert(calendarId='primary', body=event_body).execute()
+                return f"Scheduled '{summary}' for {parsed_date.strftime('%I:%M %p on %b %d')}."
+
+        except HttpError as error:
+            return f"An error occurred with Google Calendar API: {error}"
+        except Exception as e:
+            return f"Failed to manage calendar: {e}"
+
     
     def remember(self, details):
         if not details or not isinstance(details, dict):
@@ -115,7 +286,7 @@ class Executor:
             
         msg = f"Executing: WhatsApp Call to {contact}"
         print(msg)
-        if self.speaker: self.speaker.speak(msg)
+        if self.speaker: print(msg)
         
         # 1. Open WhatsApp
         self.open_application("whatsapp")
@@ -159,7 +330,7 @@ class Executor:
             
         msg = f"Executing: WhatsApp Message to {contact}"
         print(msg)
-        if self.speaker: self.speaker.speak(msg)
+        if self.speaker: print(msg)
         
         # 1. Open WhatsApp
         self.open_application("whatsapp")
@@ -202,7 +373,7 @@ class Executor:
             
         msg = f"Executing: Playing '{song}' on Spotify"
         print(msg)
-        if self.speaker: self.speaker.speak(msg)
+        if self.speaker: print(msg)
         
         # 1. Use Spotify Protocol to search
         # Encodes the query (e.g. "popular songs" -> "popular%20songs")
@@ -260,7 +431,7 @@ class Executor:
             
         msg = f"Executing: Fetching top {limit} news for '{category}'..."
         print(msg)
-        if self.speaker: self.speaker.speak(msg)
+        if self.speaker: print(msg)
         
         try:
             with urlopen(url) as response:
@@ -284,12 +455,12 @@ class Executor:
                 
                 # Speak them clearly
                 if self.speaker:
-                    self.speaker.speak(f"Here are the top {limit} {category} headlines.")
+                    print(f"Headlines fetched.")
                 
                 for i, h in enumerate(headlines, 1):
                     result += f"{i}. {h}\n"
                     if self.speaker:
-                        self.speaker.speak(h)
+                        print(h)
                         
                 return result.strip()
                 
@@ -306,7 +477,7 @@ class Executor:
         app_name = app_name.lower().strip()
         msg = f"Executing: Opening {app_name}"
         print(msg)
-        if self.speaker: self.speaker.speak(msg)
+        if self.speaker: print(msg)
 
         # 1. URL Handlers
         if "http" in app_name or ".com" in app_name or ".org" in app_name:
@@ -383,175 +554,9 @@ class Executor:
             webbrowser.open(url)
             return f"Opening official website: {url}"
 
-    def send_whatsapp_call(self, details):
-        import pyautogui
-        import time
-        
-        contact = details.get("contact")
-        
-        if not contact:
-            return "Missing contact name."
-            
-        print(f"Executing: WhatsApp Call to {contact}")
-        
-        # 1. Open WhatsApp
-        self.open_application("whatsapp")
-        
-        # 2. Wait for it to open and focus
-        time.sleep(2.0)
-        
-        try:
-            # 3. Search for contact
-            pyautogui.hotkey('ctrl', 'f')
-            time.sleep(1.0)
-            
-            # Type name
-            pyautogui.write(contact)
-            time.sleep(2.0) # Wait for search to populate
-            
-            # Select first result (Down arrow + Enter is more reliable than just Enter)
-            pyautogui.press('down')
-            time.sleep(0.5)
-            pyautogui.press('enter')
-            time.sleep(2.5) # Wait longer for chat to load
-            
-            # 4. Initiate Call (Ctrl + Shift + C for Voice Call)
-            print("Initiating call...")
-            pyautogui.hotkey('ctrl', 'shift', 'c')
-            
-            return f"Calling {contact} on WhatsApp..."
-            
-        except Exception as e:
-            return f"Call automation failed: {e}"
-
-    def send_whatsapp(self, details):
-        import pyautogui
-        import time
-        
-        contact = details.get("contact")
-        message = details.get("message")
-        
-        if not contact or not message:
-            return "Missing contact or message."
-            
-        print(f"Executing: WhatsApp Message to {contact}")
-        
-        # 1. Open WhatsApp
-        self.open_application("whatsapp")
-        
-        # 2. Wait for it to open and focus
-        time.sleep(2.0) 
-        
-        try:
-            # 3. Search for contact
-            # Ctrl+F usually focuses search in WhatsApp Desktop
-            pyautogui.hotkey('ctrl', 'f')
-            time.sleep(0.5)
-            
-            # Type name
-            pyautogui.write(contact)
-            time.sleep(2.0) # Wait for search results
-            
-            # Select first result (Down arrow + Enter usually works better than just Enter if multiple matches)
-            # But usually top match is auto-selected or just 'Enter' selects top.
-            pyautogui.press('enter')
-            time.sleep(0.5)
-            
-            # 4. Type and Send Message
-            pyautogui.write(message)
-            pyautogui.press('enter')
-            
-            return f"Message sent to {contact} (assuming name match)."
-            
-        except Exception as e:
-            return f"Automation failed: {e}"
-
-    def get_system_info(self):
-        return f"System: {platform.system()} {platform.release()}"
-
-    def open_application(self, app_name):
-        if not app_name:
-            return "No application specified."
-        
-        app_name = app_name.lower().strip()
-        print(f"Executing: Opening {app_name}")
-
-        # 1. URL Handlers
-        if "http" in app_name or ".com" in app_name or ".org" in app_name:
-            try:
-                os.startfile(app_name)
-                return f"Opening URL: {app_name}"
-            except Exception as e:
-                return f"Failed to open URL: {e}"
-
-        # 2. Known Web Shortcuts (Keep only major utilities, remove specific sites)
-        web_shortcuts = {
-            "google": "https://www.google.com",
-            "youtube": "https://www.youtube.com",
-            "github": "https://www.github.com"
-        }
-        
-        for key, url in web_shortcuts.items():
-            if key in app_name:
-                try:
-                    os.startfile(url)
-                    return f"Opening {key}..."
-                except:
-                    pass
-
-        # 3. App Name Mappings (Common names to Executables or Protocols)
-        app_map = {
-            "edge": "msedge",
-            "chrome": "chrome",
-            "notepad": "notepad",
-            "calculator": "calc",
-            "explorer": "explorer",
-            "cmd": "cmd",
-            "powershell": "powershell",
-            "spotify": "spotify",
-            "vscode": "code",
-            "word": "winword",
-            "excel": "excel",
-            "whatsapp": "whatsapp:" 
-        }
-
-        # Check for direct mapping or substring match
-        target = app_map.get(app_name)
-        if not target:
-            # Try to find a partial match in keys
-            for key, val in app_map.items():
-                if key in app_name:
-                    target = val
-                    break
-        
-        # 4. Execution
-        try:
-            if target:
-                print(f"Launching mapped: {target}")
-                # os.startfile handles both executables (via PATH/AppPaths) and Protocols
-                os.startfile(target)
-                return f"Opened {app_name} ({target})."
-            else:
-                # Fallback: Let Windows try to figure it out
-                print(f"Launching fallback: {app_name}")
-                os.startfile(app_name)
-                return f"Attempted to open '{app_name}'."
-                
-        except Exception as e:
-            # Final Fallback: Search in Browser or Open Domain
-            print(f"Local open failed. Attempting domain guess for: {app_name}")
-            import webbrowser
-            
-            # Heuristic: Try to open as a .com domain
-            # "open unstop" -> unstop -> unstop.com
-            # "open facebook" -> facebook -> facebook.com
-            clean_name = app_name.replace(" ", "")
-            url = f"https://www.{clean_name}.com"
-            
-            webbrowser.open(url)
-            return f"Opening official website: {url}"
 
     def close_application(self, app_name):
+        import psutil
         import difflib
         
         if not app_name:
@@ -560,52 +565,63 @@ class Executor:
         app_name = app_name.lower().strip()
         msg = f"Executing: Closing {app_name}"
         print(msg)
-        if self.speaker: self.speaker.speak(msg)
+        if self.speaker: print(msg)
 
         # Mapping for closing (process names)
-        # Note: taskkill uses /IM process_image_name
         process_map = {
-            "edge": "msedge.exe",
-            "chrome": "chrome.exe",
-            "notepad": "notepad.exe",
-            "calculator": "CalculatorApp.exe", # Modern calc
-            "calc": "calc.exe",                # Legacy calc
-            "spotify": "spotify.exe",
-            "vscode": "Code.exe",
-            "word": "WINWORD.EXE",
-            "excel": "EXCEL.EXE",
-            "whatsapp": "WhatsApp.Root.exe"
+            "edge": ["msedge.exe"],
+            "chrome": ["chrome.exe"],
+            "notepad": ["notepad.exe"],
+            "calculator": ["CalculatorApp.exe", "calc.exe"],
+            "spotify": ["spotify.exe"],
+            "vscode": ["Code.exe"],
+            "word": ["WINWORD.EXE"],
+            "excel": ["EXCEL.EXE"],
+            "whatsapp": ["WhatsApp.exe", "WhatsApp.Root.exe"]
         }
 
-        target_process = process_map.get(app_name)
+        targets = process_map.get(app_name)
         
         # Fuzzy match if exact match fails
-        if not target_process:
-            matches = difflib.get_close_matches(app_name, process_map.keys(), n=1, cutoff=0.6)
+        if not targets:
+            matches = difflib.get_close_matches(app_name, list(process_map.keys()), n=1, cutoff=0.6)
             if matches:
                 matched_key = matches[0]
                 print(f"Fuzzy match: '{app_name}' -> '{matched_key}'")
-                target_process = process_map[matched_key]
+                targets = process_map[matched_key]
 
-        if not target_process:
+        if not targets:
              for key, val in process_map.items():
                 if key in app_name:
-                    target_process = val
+                    targets = val
                     break
         
-        # Fallback if no specific mapping found, try app_name + .exe
-        if not target_process:
-            target_process = f"{app_name}.exe"
+        # Fallback: try app_name itself
+        if not targets:
+            targets = [f"{app_name}.exe", app_name]
 
+        found = False
+        terminated_count = 0
+        
         try:
-            print(f"Terminating process: {target_process}")
-            # /F force, /IM image name
-            result = os.system(f"taskkill /F /IM {target_process}")
-            if result == 0:
-                return f"Closed {app_name}."
+            for proc in psutil.process_iter(['name']):
+                try:
+                    pname = proc.info['name'].lower() if proc.info['name'] else ""
+                    for target in targets:
+                        if target.lower() == pname or (target.lower() in pname and len(target) > 3):
+                            proc.terminate()
+                            terminated_count += 1
+                            found = True
+                except (psutil.NoSuchProcess, psutil.AccessDenied, psutil.ZombieProcess):
+                    continue
+            
+            if found:
+                return f"Closed {app_name} ({terminated_count} process instances)."
             else:
-                return f"Could not close {app_name}. It might not be running."
+                return f"Could not find {app_name} running."
         except Exception as e:
+            import traceback
+            traceback.print_exc()
             return f"Failed to close {app_name}: {e}"
 
 
@@ -628,7 +644,7 @@ class Executor:
         
         msg = f"Executing: Creating folder '{folder_name}' at {base_path}"
         print(msg)
-        if self.speaker: self.speaker.speak(msg)
+        if self.speaker: print(msg)
 
         try:
             os.makedirs(full_path, exist_ok=True)
@@ -657,7 +673,7 @@ class Executor:
         
         msg = f"Executing: Deleting folder '{folder_name}' from {base_path}"
         print(msg)
-        if self.speaker: self.speaker.speak(msg)
+        if self.speaker: print(msg)
 
         if not os.path.exists(full_path):
              return f"Folder '{folder_name}' does not exist at {base_path}."
@@ -745,7 +761,7 @@ class Executor:
                 return f"Unknown volume action: {action}"
                 
             print(f"Executing: {msg}")
-            if self.speaker: self.speaker.speak(msg)
+            if self.speaker: print(msg)
             return msg
             
         except Exception as e:
@@ -774,7 +790,7 @@ class Executor:
              return f"Unknown power action: {action}"
              
         print(f"Executing: {msg}")
-        if self.speaker: self.speaker.speak(msg)
+        if self.speaker: print(msg)
         
         try:
             os.system(cmd)
@@ -800,7 +816,7 @@ class Executor:
             
             msg = "Taking screenshot..."
             print(msg)
-            if self.speaker: self.speaker.speak(msg)
+            if self.speaker: print(msg)
             
             # Take screenshot
             screenshot = pyautogui.screenshot()
@@ -821,7 +837,7 @@ class Executor:
             
         msg = f"Executing: Searching Google for '{query}'"
         print(msg)
-        if self.speaker: self.speaker.speak(msg)
+        if self.speaker: print(msg)
         
         try:
             url = f"https://www.google.com/search?q={quote(query)}"
@@ -840,7 +856,7 @@ class Executor:
             
         msg = f"Executing: Playing '{query}' on YouTube"
         print(msg)
-        if self.speaker: self.speaker.speak(msg)
+        if self.speaker: print(msg)
         
         try:
             # Open search results. Auto-playing first video is complex/flaky without API or Selenium.
@@ -857,7 +873,7 @@ class Executor:
         location = details.get("location")
         msg = f"Executing: Checking weather for {location if location else 'your location'}..."
         print(msg)
-        if self.speaker: self.speaker.speak(msg)
+        if self.speaker: print(msg)
         
         try:
             # wttr.in is a console-oriented weather service
@@ -883,7 +899,7 @@ class Executor:
              
         msg = f"Executing: Defining '{term}'..."
         print(msg)
-        if self.speaker: self.speaker.speak(msg)
+        if self.speaker: print(msg)
         
         try:
             # Get 1 sentence summary
@@ -909,7 +925,7 @@ class Executor:
         # We can add a simple mapping for reliability
         msg = f"Executing: Translating to {target}..."
         print(msg)
-        if self.speaker: self.speaker.speak(msg)
+        if self.speaker: print(msg)
         
         try:
             translator = GoogleTranslator(source='auto', target=target)
