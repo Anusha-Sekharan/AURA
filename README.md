@@ -1,4 +1,4 @@
-# 🌌 Aura: Your Intelligent Local AI Assistant !!
+# 🌌 AURA: Your Intelligent Local AI Assistant !!
 
 Aura is a sophisticated, multimodal AI assistant designed to run locally, providing powerful system automation and personal assistance while prioritizing privacy. It combines a **Python/Flask** backend with a modern **Electron-based** user interface, powered by large language models like **Ollama**.
 
