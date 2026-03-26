@@ -1,7 +1,6 @@
 import config
 from brain import Brain
 
-# Mock the Brain process but with real Ollama calls if possible
 # or just test the intent parsing if I could mock the response.
 # For now, I'll run a real test assuming Ollama is up.
 def test_email_intent():
